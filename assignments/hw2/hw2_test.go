@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 
 			panicked bool
 		)
-		flist := []func(graph.Node, graph.Graph) Shortest{Dijkstra, BellmanFord}//, Dijkstra,DeltaStep}
+		flist := []func(graph.Node, graph.Graph) Shortest{BellmanFord, Dijkstra}//, Dijkstra,DeltaStep}
 
 		for _, f := range flist {
 			func() {

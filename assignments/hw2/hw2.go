@@ -3,6 +3,7 @@ package hw2
 import (
 	"github.com/gonum/graph"
 	"fmt"
+	"sync"
 )
 // Apply the bellman-ford algorihtm to Graph and return
 // a shortest path tree.
@@ -16,25 +17,22 @@ type distance struct{
 	from_idx int
 	changed bool
 }
-func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, g graph.Graph, w float64)	{
-	//get weight from u to v
-	from := path.indexOf[u.ID()]
-	to := path.indexOf[v.ID()]
-	//w := g.Edge(u,v).Weight()
-	
-	dist_updated := path.dist[from] + w
-
-	if dist_updated < path.dist[to]{
-		//path.set(to, dist_updated, from)
-		chnl<- distance{to_idx: to, dist_new: dist_updated, from_idx: from, changed: true}
+func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, w float64)	{
+	k := path.indexOf[v.ID()]
+	j := path.indexOf[u.ID()]
+	var changed bool
+	joint := path.dist[j] + w
+	if joint < path.dist[k] {
+		changed = true
+		fmt.Println(joint)
 	}else{
-		chnl<- distance{to_idx: 0, dist_new: 0, from_idx: 0, changed: false}
+		changed = false
 	}
-		
+	chnl<-distance{to_idx: k, dist_new: joint, from_idx: j, changed: changed}
 }
-func BellmanFord(s graph.Node, g graph.Graph) Shortest {
-	if !g.Has(s) {
-		return Shortest {from: s}
+func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
+	if !g.Has(u) {
+		return Shortest{from: u}
 	}
 	var weight Weighting
 	if wg, ok := g.(graph.Weighter); ok {
@@ -44,40 +42,58 @@ func BellmanFord(s graph.Node, g graph.Graph) Shortest {
 	}
 
 	nodes := g.Nodes()
-	path := newShortestFrom(s, nodes)
-	path.dist[path.indexOf[s.ID()]] = 0
-	//fmt.Println(g.Nodes())
 
-changed := true
+	path = newShortestFrom(u, nodes)
+	path.dist[path.indexOf[u.ID()]] = 0
 
-for i:= 0; (i < (len(nodes)-1))&&(changed!=false); i++{
-	changed = false
-	for _,u := range g.Nodes() {
-		chnl := make(chan distance)
-		fromnodes:= g.From(u)
-		for _, v := range g.From(u){
-			w, ok := weight(u, v)
-			if !ok{
-				panic("Panic: incorrect weight")
-			}
-			go UpdateDist(chnl, u, v, path, g, w)
-		}
-		for j:=0; j < len(fromnodes); j++{
-			newpath := <- chnl
-				changed = newpath.changed
-				if(changed == true){
-					if newpath.dist_new < 0{
-						panic("PANIC! at the disco. Negative Weight")
-						//fmt.Println(v)
-					}
-					path.set(newpath.to_idx, newpath.dist_new, newpath.from_idx)
+	chnl := make(chan distance)
+	// TODO(kortschak): Consider adding further optimisations
+	// from http://arxiv.org/abs/1111.5414.
+	for i := 1; i < len(nodes); i++ {
+		changed := false
+		for _, u := range nodes {
+			for _, v := range g.From(u) {
+				w, ok := weight(u, v)
+				if !ok {
+					panic("bellman-ford: unexpected invalid weight")
 				}
-
+				if w<0{
+					panic("bellman-ford: negative weight")
+				}
+				go UpdateDist(chnl, u, v, path, w)
+			}
+			for _, v := range g.From(u) {
+				dist, ok := <- chnl
+				fmt.Println(dist)
+				if !ok{
+					panic("bellman-ford: bad channel read")
+					fmt.Println(v)
+				}
+				changed = dist.changed
+				if(changed){
+					path.set(dist.to_idx, dist.dist_new, dist.from_idx)	
+				}
+			}
+		}
+		if !changed {
+			break
 		}
 	}
-	
-}//END for all nodes 
-fmt.Println("BELLMAN FORD: ", path.dist)
+
+//	for j, u := range nodes {
+//		for _, v := range g.From(u) {
+//			k := path.indexOf[v.ID()]
+//			w, ok := weight(u, v)
+//			if !ok {
+//				panic("bellman-ford: unexpected invalid weight")
+//			}
+///			if path.dist[j]+w < path.dist[k] {
+	//			return path
+	//		}
+	//	}
+//	}
+	close(chnl)
+	fmt.Println("BELLMAN FORD: ",path.dist)
 	return path
 }
 
@@ -88,4 +104,51 @@ fmt.Println("BELLMAN FORD: ", path.dist)
 // but you can use another struct if that makes more sense
 // for the concurrency model you chose.
 
+func DeltaStep(s graph.Node, g graph.Graph) Shortest {
+	delta := 3 //bin size
+	var B []int[]graph.Node //sequence of buckets
 
+	////////////////////
+	for _, i := range B{
+		S := {}
+		for _, j := range B[i]{
+			//req := getReqLight()
+			S = append(S, B[i])
+			for _, v in req{
+				
+			}
+		}
+	}
+	//while B is not 0
+		//S := {}
+		//while B[i] is not {}
+			//GET req req := {newdist+weight is in B[i] AND is light}
+			//S := S append B[i]
+			//for each v in req
+				//relax v
+			//for each v in req
+				//colect to path
+		//req := newdist+weight is in S AND is heavy
+		//for each v in req
+			//relax
+	//i++ END while B is not 0
+
+	//}
+	return newShortestFrom(s, g.Nodes())
+}
+func relax(u graph.Node, v graph.Node, c int, path Shortest, chnl chan distance){
+	from := path.indexOf[u.ID()]
+	to := path.indexOf[v.ID()]
+
+	if c < path.dist[path.indexOf(u)]{
+		chnl<-distance{chnl<- distance{to_idx: to, dist_new: dist_updated, from_idx: from, changed: true}
+		B[i].Push(v)//check this
+	}else{
+		chnl<-distance{chnl<- distance{to_idx: to, dist_new: dist_updated, from_idx: from, changed: false}
+	}
+}
+
+// Runs dijkstra from gonum to make sure that the tests are correct.
+func Dijkstra(s graph.Node, g graph.Graph) Shortest {
+	return DijkstraFrom(s, g)
+}

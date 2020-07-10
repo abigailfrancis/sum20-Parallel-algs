@@ -3,6 +3,7 @@ package hw2
 import (
 	"container/heap"
 	"github.com/gonum/graph"
+	"fmt"
 )
 
 // DijkstraFrom returns a shortest-path tree for a shortest path from u to all nodes in
@@ -10,7 +11,7 @@ import (
 // DijkstraFrom will panic if g has a u-reachable negative edge weight.
 //
 // The time complexity of DijkstrFrom is O(|E|.log|V|).
-func DijkstraFrom(u graph.Node, g graph.Graph) Shortest {
+func Dijkstra(u graph.Node, g graph.Graph) Shortest {
 	if !g.Has(u) {
 		return Shortest{from: u}
 	}
@@ -57,7 +58,7 @@ func DijkstraFrom(u graph.Node, g graph.Graph) Shortest {
 			}
 		}
 	}
-
+	fmt.Println("DIJKSTRA: ", path.dist)
 	return path
 }
 
