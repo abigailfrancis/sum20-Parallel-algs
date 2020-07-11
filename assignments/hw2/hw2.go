@@ -129,22 +129,28 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 
 	// initialize bucket data structure
 	var B []Bucket // sequence of buckets
+	allNodes := g.Nodes()
+	path := newShortestFrom(s, g.Nodes())
+	requestedChannel := make(chan distance)
 
 	// relax the source node
-	path := newShortestFrom(s, g.Nodes())
 	for _,i := range g.From(s){
-		relax(s,i, 0, path, B)
+		go firstNodeRelax(s, i, requestedChannel, g, path)
+	}
+	for range  g.From(s) {
+		requested := <-requestedChannel
+		if requested.changed {
+			relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+			path.set(requested.toIdx, requested.distNew, requested.fromIdx)
+		}
 	}
 
-	allNodes := g.Nodes()
 
 	// while there are any buckets, do
 	for bucketIndex, bucket := range B {
 		// // init structure S for remembering deleted nodes
 		var S Bucket // kinda of a faux bucket
 		S.nodes = nil
-
-		requestedChannel := make(chan distance)
 
 		// while Bucket i isn't empty:
 		for len(bucket.nodes) != 0 {
@@ -260,4 +266,20 @@ func moveNodeToNewBucket(buckets []Bucket, bucketIndex int, node graph.Node) {
 
 	// add to its new bucket
 	buckets[bucketIndex].nodes = append(buckets[bucketIndex].nodes, node)
+	fmt.Println(buckets[bucketIndex].nodes)
+}
+
+func firstNodeRelax(s graph.Node, to graph.Node, channel chan distance, g graph.Graph, path Shortest){
+	var weight Weighting
+	if wg, ok := g.(graph.Weighter); ok {
+		weight = wg.Weight
+	} else {
+		weight = UniformCost(g)
+	}
+
+	w, ok := weight(s, to)
+
+	if ok {
+		channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[s.ID()]], fromIdx: path.indexOf[s.ID()], changed: true}
+	}
 }
