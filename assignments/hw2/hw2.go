@@ -2,7 +2,7 @@ package hw2
 
 import (
 	"fmt"
-
+	//"sync"
 	"github.com/gonum/graph"
 )
 
@@ -29,7 +29,7 @@ func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, w
 	joint := path.dist[j] + w
 	if joint < path.dist[k] {
 		changed = true
-		fmt.Println(joint)
+	//	fmt.Println(joint)
 	} else {
 		changed = false
 	}
@@ -72,7 +72,6 @@ func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
 			}
 			for range g.From(u) {
 				dist, ok := <-chnl
-				fmt.Println(dist)
 				if !ok {
 					panic("bellman-ford: bad channel read")
 					// fmt.Println(v)
@@ -126,32 +125,31 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 	if !g.Has(s) {
 		return Shortest{from: s}
 	}
-
+	//var waiton sync.WaitGroup
 	// initialize bucket data structure
 	var B []Bucket // sequence of buckets
 	allNodes := g.Nodes()
 	path := newShortestFrom(s, g.Nodes())
 	requestedChannel := make(chan distance)
-
 	// relax the source node
 	for _,i := range g.From(s){
+	//	waitgroup.Add(1)
 		go firstNodeRelax(s, i, requestedChannel, g, path)
 	}
+	
 	for range  g.From(s) {
 		requested := <-requestedChannel
 		if requested.changed {
-			relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+			B = relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
 			path.set(requested.toIdx, requested.distNew, requested.fromIdx)
 		}
 	}
-
-
 	// while there are any buckets, do
 	for bucketIndex, bucket := range B {
+
 		// // init structure S for remembering deleted nodes
 		var S Bucket // kinda of a faux bucket
 		S.nodes = nil
-
 		// while Bucket i isn't empty:
 		for len(bucket.nodes) != 0 {
 			go getReqLight(bucketIndex, bucket, path, g, requestedChannel) // find the light edges
@@ -167,17 +165,16 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 			for range bucket.nodes {
 				requested := <-requestedChannel
 				if requested.changed {
-					relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+					B = relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
 					path.set(requested.toIdx, requested.distNew, requested.fromIdx)
 				}
 			}
 		}
-
 		go getReqHeavy(bucketIndex, S, path, g, requestedChannel) // find the heavy edges
 		for range bucket.nodes {
 			requested := <-requestedChannel
 			if requested.changed {
-				relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+				B = relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
 				path.set(requested.toIdx, requested.distNew, requested.fromIdx)
 			}
 		}
@@ -186,12 +183,16 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 	return path
 }
 
-func relax(u graph.Node, v graph.Node, c float64, path Shortest, B []Bucket) {
+func relax(u graph.Node, v graph.Node, c float64, path Shortest, B []Bucket) []Bucket {
+	if c<0{
+		panic("C is less than 0")
+	}
 	if c < path.dist[path.indexOf[u.ID()]] {
 		// what bucket should it be in?
 		bucketIndex := int(c / DELTA)
-		moveNodeToNewBucket(B, bucketIndex, v)
+		B = moveNodeToNewBucket(B, bucketIndex, v)
 	}
+	return B
 }
 
 func getReqLight(bucketIndex int, bucket Bucket, path Shortest, g graph.Graph, requested chan distance) {
@@ -252,25 +253,36 @@ func evaluateHeavy(from graph.Node, to graph.Node, path Shortest, g graph.Graph,
 	}
 }
 
-func removeNodeFromBuckets(buckets []Bucket, node graph.Node) {
-	for _, bucket := range buckets {
+func removeNodeFromBuckets(buckets []Bucket, node graph.Node) []Bucket{
+	for j, bucket := range buckets {
 		for i, searchNode := range bucket.nodes {
 			if searchNode.ID() == node.ID() {
 				// remove it!
-				copy(bucket.nodes[i:], bucket.nodes[i+1:])
-				bucket.nodes[len(bucket.nodes)-1] = nil
+				copy(buckets[j].nodes[i:], buckets[j].nodes[i+1:])
+				buckets[j].nodes[len(buckets[j].nodes)-1] = nil
 			}
 		}
 	}
+	return buckets
 }
 
-func moveNodeToNewBucket(buckets []Bucket, bucketIndex int, node graph.Node) {
+func moveNodeToNewBucket(buckets []Bucket, bucketIndex int, node graph.Node) []Bucket{
 	// remove from its old bucket, if it's in one
-	removeNodeFromBuckets(buckets, node)
-
+	buckets = removeNodeFromBuckets(buckets, node)
 	// add to its new bucket
+		//fmt.Println("bucketIndex", bucketIndex)
+	if len(buckets)<=bucketIndex{
+		for i := len(buckets); i <= bucketIndex; i++{
+			var blankBucket Bucket
+			buckets = append(buckets, blankBucket) 
+
+		}	
+	}
+	//fmt.Println("bucketsize", len(buckets))
+	
 	buckets[bucketIndex].nodes = append(buckets[bucketIndex].nodes, node)
-	fmt.Println(buckets[bucketIndex].nodes)
+	//fmt.Println(len(buckets))
+	return buckets
 }
 
 func firstNodeRelax(s graph.Node, to graph.Node, channel chan distance, g graph.Graph, path Shortest){

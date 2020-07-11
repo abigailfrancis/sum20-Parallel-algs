@@ -3,7 +3,7 @@ package hw2
 import (
 	"container/heap"
 	"github.com/gonum/graph"
-	"fmt"
+//	"fmt"
 )
 
 // DijkstraFrom returns a shortest-path tree for a shortest path from u to all nodes in
@@ -58,7 +58,7 @@ func Dijkstra(u graph.Node, g graph.Graph) Shortest {
 			}
 		}
 	}
-	fmt.Println("DIJKSTRA: ", path.dist)
+	//fmt.Println("DIJKSTRA: ", path.dist)
 	return path
 }
 
