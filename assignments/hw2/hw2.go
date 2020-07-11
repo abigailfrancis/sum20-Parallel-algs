@@ -1,23 +1,28 @@
 package hw2
 
 import (
-	"github.com/gonum/graph"
 	"fmt"
-	"sync"
+
+	"github.com/gonum/graph"
 )
+
 // Apply the bellman-ford algorihtm to Graph and return
 // a shortest path tree.
 //
 // Note that this uses Shortest to make it easier for you,
 // but you can use another struct if that makes more sense
 // for the concurrency model you chose.
-type distance struct{
-	to_idx int
-	dist_new float64
-	from_idx int
+
+// Distance ...
+type distance struct {
+	toIdx   int
+	distNew float64
+	fromIdx int
 	changed bool
 }
-func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, w float64)	{
+
+// UpdateDist ...
+func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, w float64) {
 	k := path.indexOf[v.ID()]
 	j := path.indexOf[u.ID()]
 	var changed bool
@@ -25,12 +30,16 @@ func UpdateDist(chnl chan distance, u graph.Node, v graph.Node, path Shortest, w
 	if joint < path.dist[k] {
 		changed = true
 		fmt.Println(joint)
-	}else{
+	} else {
 		changed = false
 	}
-	chnl<-distance{to_idx: k, dist_new: joint, from_idx: j, changed: changed}
+	chnl <- distance{toIdx: k, distNew: joint, fromIdx: j, changed: changed}
 }
+
+// BellmanFord ...
 func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
+	// Your code goes here.
+	// sequential version from https://github.com/gonum/graph/blob/master/path/bellman_ford_moore.go
 	if !g.Has(u) {
 		return Shortest{from: u}
 	}
@@ -47,8 +56,7 @@ func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
 	path.dist[path.indexOf[u.ID()]] = 0
 
 	chnl := make(chan distance)
-	// TODO(kortschak): Consider adding further optimisations
-	// from http://arxiv.org/abs/1111.5414.
+
 	for i := 1; i < len(nodes); i++ {
 		changed := false
 		for _, u := range nodes {
@@ -57,21 +65,21 @@ func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
 				if !ok {
 					panic("bellman-ford: unexpected invalid weight")
 				}
-				if w<0{
+				if w < 0 {
 					panic("bellman-ford: negative weight")
 				}
 				go UpdateDist(chnl, u, v, path, w)
 			}
-			for _, v := range g.From(u) {
-				dist, ok := <- chnl
+			for range g.From(u) {
+				dist, ok := <-chnl
 				fmt.Println(dist)
-				if !ok{
+				if !ok {
 					panic("bellman-ford: bad channel read")
-					fmt.Println(v)
+					// fmt.Println(v)
 				}
 				changed = dist.changed
-				if(changed){
-					path.set(dist.to_idx, dist.dist_new, dist.from_idx)	
+				if changed {
+					path.set(dist.toIdx, dist.distNew, dist.fromIdx)
 				}
 			}
 		}
@@ -80,20 +88,20 @@ func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
 		}
 	}
 
-//	for j, u := range nodes {
-//		for _, v := range g.From(u) {
-//			k := path.indexOf[v.ID()]
-//			w, ok := weight(u, v)
-//			if !ok {
-//				panic("bellman-ford: unexpected invalid weight")
-//			}
-///			if path.dist[j]+w < path.dist[k] {
+	//	for j, u := range nodes {
+	//		for _, v := range g.From(u) {
+	//			k := path.indexOf[v.ID()]
+	//			w, ok := weight(u, v)
+	//			if !ok {
+	//				panic("bellman-ford: unexpected invalid weight")
+	//			}
+	///			if path.dist[j]+w < path.dist[k] {
 	//			return path
 	//		}
 	//	}
-//	}
+	//	}
 	close(chnl)
-	fmt.Println("BELLMAN FORD: ",path.dist)
+	// fmt.Println("BELLMAN FORD: ",path.dist)
 	return path
 }
 
@@ -104,51 +112,152 @@ func BellmanFord(u graph.Node, g graph.Graph) (path Shortest) {
 // but you can use another struct if that makes more sense
 // for the concurrency model you chose.
 
-func DeltaStep(s graph.Node, g graph.Graph) Shortest {
-	delta := 3 //bin size
-	var B []int[]graph.Node //sequence of buckets
+// Bucket ...
+type Bucket struct {
+	nodes []graph.Node
+}
 
-	////////////////////
-	for _, i := range B{
-		S := {}
-		for _, j := range B[i]{
-			//req := getReqLight()
-			S = append(S, B[i])
-			for _, v in req{
-				
+// DELTA hyperparameter
+const DELTA float64 = 3
+
+// DeltaStep ...
+func DeltaStep(s graph.Node, g graph.Graph) Shortest {
+	// Your code goes here.
+	if !g.Has(s) {
+		return Shortest{from: s}
+	}
+
+	// initialize bucket data structure
+	var B []Bucket // sequence of buckets
+
+	// relax the source node
+	path := newShortestFrom(s, g.Nodes())
+	for _,i := range g.From(s){
+		relax(s,i, 0, path, B)
+	}
+
+	allNodes := g.Nodes()
+
+	// while there are any buckets, do
+	for bucketIndex, bucket := range B {
+		// // init structure S for remembering deleted nodes
+		var S Bucket // kinda of a faux bucket
+		S.nodes = nil
+
+		requestedChannel := make(chan distance)
+
+		// while Bucket i isn't empty:
+		for len(bucket.nodes) != 0 {
+			getReqLight(bucketIndex, bucket, path, g, requestedChannel) // find the light edges
+
+			// add deleted nodes to S
+			for _, bucketNode := range bucket.nodes {
+				S.nodes = append(S.nodes, bucketNode)
+			}
+
+			// empty this bucket
+			bucket.nodes = nil
+
+			for range bucket.nodes {
+				requested := <-requestedChannel
+				if requested.changed {
+					relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+					path.set(requested.toIdx, requested.distNew, requested.fromIdx)
+				}
+			}
+		}
+
+		getReqHeavy(bucketIndex, S, path, g, requestedChannel) // find the heavy edges
+		for range bucket.nodes {
+			requested := <-requestedChannel
+			if requested.changed {
+				relax(allNodes[requested.fromIdx], allNodes[requested.toIdx], float64(requested.distNew), path, B)
+				path.set(requested.toIdx, requested.distNew, requested.fromIdx)
 			}
 		}
 	}
-	//while B is not 0
-		//S := {}
-		//while B[i] is not {}
-			//GET req req := {newdist+weight is in B[i] AND is light}
-			//S := S append B[i]
-			//for each v in req
-				//relax v
-			//for each v in req
-				//colect to path
-		//req := newdist+weight is in S AND is heavy
-		//for each v in req
-			//relax
-	//i++ END while B is not 0
-
-	//}
-	return newShortestFrom(s, g.Nodes())
+	fmt.Println("DELTA STEPPING: ", path.dist)
+	return path
 }
-func relax(u graph.Node, v graph.Node, c int, path Shortest, chnl chan distance){
-	from := path.indexOf[u.ID()]
-	to := path.indexOf[v.ID()]
 
-	if c < path.dist[path.indexOf(u)]{
-		chnl<-distance{chnl<- distance{to_idx: to, dist_new: dist_updated, from_idx: from, changed: true}
-		B[i].Push(v)//check this
-	}else{
-		chnl<-distance{chnl<- distance{to_idx: to, dist_new: dist_updated, from_idx: from, changed: false}
+func relax(u graph.Node, v graph.Node, c float64, path Shortest, B []Bucket) {
+	if c < path.dist[path.indexOf[u.ID()]] {
+		// what bucket should it be in?
+		bucketIndex := int(c / DELTA)
+		moveNodeToNewBucket(B, bucketIndex, v)
 	}
 }
 
-// Runs dijkstra from gonum to make sure that the tests are correct.
-func Dijkstra(s graph.Node, g graph.Graph) Shortest {
-	return DijkstraFrom(s, g)
+func getReqLight(bucketIndex int, bucket Bucket, path Shortest, g graph.Graph, requested chan distance) {
+	for _, from := range bucket.nodes {
+		for _, to := range g.From(from) {
+			evaluateLight(from, to, path, g, bucket.nodes, bucketIndex, requested)
+		}
+	}
+}
+
+func evaluateLight(from graph.Node, to graph.Node, path Shortest, g graph.Graph, bucketNodes []graph.Node, bucketIndex int, channel chan distance) {
+	var weight Weighting
+	if wg, ok := g.(graph.Weighter); ok {
+		weight = wg.Weight
+	} else {
+		weight = UniformCost(g)
+	}
+
+	w, ok := weight(from, to)
+
+	if ok {
+		if w <= DELTA { // is it light?
+			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[from.ID()]], fromIdx: path.indexOf[from.ID()], changed: true}
+		} else {
+			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[from.ID()]], fromIdx: path.indexOf[from.ID()], changed: false}
+		}
+	}
+}
+
+func getReqHeavy(bucketIndex int, s Bucket, path Shortest, g graph.Graph, requested chan distance) {
+	for _, from := range s.nodes {
+		for _, to := range g.From(from) {
+			evaluateHeavy(from, to, path, g, s.nodes, bucketIndex, requested)
+		}
+	}
+}
+
+func evaluateHeavy(from graph.Node, to graph.Node, path Shortest, g graph.Graph, sNodes []graph.Node, bucketIndex int, channel chan distance) {
+	var weight Weighting
+	if wg, ok := g.(graph.Weighter); ok {
+		weight = wg.Weight
+	} else {
+		weight = UniformCost(g)
+	}
+
+	w, ok := weight(from, to)
+
+	if ok {
+		if w > DELTA { // is it heavy?
+			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[to.ID()]], fromIdx: path.indexOf[from.ID()], changed: true}
+		} else {
+			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[to.ID()]], fromIdx: path.indexOf[from.ID()], changed: false}
+		}
+	}
+}
+
+func removeNodeFromBuckets(buckets []Bucket, node graph.Node) {
+	for _, bucket := range buckets {
+		for i, searchNode := range bucket.nodes {
+			if searchNode.ID() == node.ID() {
+				// remove it!
+				copy(bucket.nodes[i:], bucket.nodes[i+1:])
+				bucket.nodes[len(bucket.nodes)-1] = nil
+			}
+		}
+	}
+}
+
+func moveNodeToNewBucket(buckets []Bucket, bucketIndex int, node graph.Node) {
+	// remove from its old bucket, if it's in one
+	removeNodeFromBuckets(buckets, node)
+
+	// add to its new bucket
+	buckets[bucketIndex].nodes = append(buckets[bucketIndex].nodes, node)
 }
