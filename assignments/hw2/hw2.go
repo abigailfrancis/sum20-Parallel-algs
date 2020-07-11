@@ -154,7 +154,7 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 
 		// while Bucket i isn't empty:
 		for len(bucket.nodes) != 0 {
-			getReqLight(bucketIndex, bucket, path, g, requestedChannel) // find the light edges
+			go getReqLight(bucketIndex, bucket, path, g, requestedChannel) // find the light edges
 
 			// add deleted nodes to S
 			for _, bucketNode := range bucket.nodes {
@@ -173,7 +173,7 @@ func DeltaStep(s graph.Node, g graph.Graph) Shortest {
 			}
 		}
 
-		getReqHeavy(bucketIndex, S, path, g, requestedChannel) // find the heavy edges
+		go getReqHeavy(bucketIndex, S, path, g, requestedChannel) // find the heavy edges
 		for range bucket.nodes {
 			requested := <-requestedChannel
 			if requested.changed {
@@ -211,7 +211,9 @@ func evaluateLight(from graph.Node, to graph.Node, path Shortest, g graph.Graph,
 	}
 
 	w, ok := weight(from, to)
-
+	if w < 0{
+		panic("Delta Step: Negative Weight")
+	}
 	if ok {
 		if w <= DELTA { // is it light?
 			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[from.ID()]], fromIdx: path.indexOf[from.ID()], changed: true}
@@ -238,7 +240,9 @@ func evaluateHeavy(from graph.Node, to graph.Node, path Shortest, g graph.Graph,
 	}
 
 	w, ok := weight(from, to)
-
+	if w < 0{
+		panic("Delta Step: Negative Weight")
+	}
 	if ok {
 		if w > DELTA { // is it heavy?
 			channel <- distance{toIdx: path.indexOf[to.ID()], distNew: w + path.dist[path.indexOf[to.ID()]], fromIdx: path.indexOf[from.ID()], changed: true}
